@@ -204,8 +204,8 @@ không cần biên dịch module native nào cho Node.
 ```bat
 npm test              :: cả ba bộ
 npm run test:detect   :: 17 ca nhận diện bí mật (kể cả ca âm tính giả)
-npm run test:helper   :: 18 ca trên clipboard thật (tự sao lưu & phục hồi clipboard của bạn)
-npm run test:server   :: 28 ca đầu-cuối: nguồn, bí mật, tìm kiếm, dòng họ, dán đích, SSE
+npm run test:helper   :: 19 ca trên clipboard thật (tự sao lưu & phục hồi clipboard của bạn)
+npm run test:server   :: 39 ca đầu-cuối: nguồn, bí mật, tìm kiếm, dòng họ, dán đích, SSE
 npm run selftest      :: mở giao diện thật, kiểm tra DOM rồi chụp ảnh tools/ui-screenshot.png
 ```
 
@@ -230,3 +230,12 @@ node_modules\electron\dist\electron.exe . --data-dir="%TEMP%\SuperClipboard\demo
 | Không biết nguồn trang web | URL nguồn chỉ có khi trang web đặt `SourceURL` vào clipboard (hầu hết trình duyệt đều làm). Copy từ Notepad thì không có URL. |
 | Dán vào sai cửa sổ | Helper sẽ **không dán** nếu chưa giành được focus. Hãy bấm vào ứng dụng đích rồi thử lại. |
 | Muốn xoá sạch | Khay hệ thống → **Mở thư mục dữ liệu**, xoá `items.ndjson` và `blobs`. |
+
+---
+
+## Giấy phép
+
+MIT — xem [LICENSE](LICENSE).
+
+Khoá bí mật xuất hiện trong mã kiểm thử là **giá trị giả**, ghép từ nhiều mảnh
+trong `tools/fake.js` để tệp nguồn không chứa chuỗi nào trùng mẫu khoá thật.
