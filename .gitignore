@@ -1,0 +1,28 @@
+# Phụ thuộc
+node_modules/
+
+# Sản phẩm biên dịch (SuperClipboard.cmd tự dựng lại nếu thiếu)
+helper/SuperClipHelper.exe
+*.pdb
+*.obj
+
+# Kết quả kiểm thử sinh tự động
+tools/ui-selftest.json
+
+# Dữ liệu chạy thử
+data/
+tmp/
+blobs/
+*.ndjson
+
+# Hệ điều hành / trình soạn thảo
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Ghi chú, tệp tạm
+*.log
+*.bak

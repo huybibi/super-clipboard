@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>SuperClipboard — bảng lệnh nhanh</title>
+<style>
+  :root {
+    --bg: #0d1017; --surface: #161b26; --surface-2: #1d2331; --border: #2a3245;
+    --text: #e7eaf3; --dim: #a2abc0; --muted: #6f7893;
+    --accent: #6366f1; --cyan: #22d3ee; --amber: #f59e0b; --green: #10b981;
+    --mono: "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: transparent; color: var(--text); overflow: hidden;
+    font: 13px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  .shell {
+    height: 100%; display: grid; grid-template-rows: 52px 1fr 26px;
+    background: linear-gradient(180deg, rgba(22, 27, 38, .985), rgba(13, 16, 23, .985));
+    border: 1px solid var(--border); border-radius: 15px; overflow: hidden;
+    box-shadow: 0 30px 70px rgba(0, 0, 0, .7);
+  }
+  .bar { display: flex; align-items: center; gap: 9px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+  .bar .ico { font-size: 15px; opacity: .8; }
+  #q {
+    flex: 1; background: none; border: 0; outline: 0; font-size: 15px; color: var(--text);
+    height: 100%; letter-spacing: .1px;
+  }
+  #q::placeholder { color: #5b637a; }
+  .target {
+    font-size: 11px; color: var(--muted); max-width: 190px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; border-left: 1px solid var(--border); padding-left: 9px;
+  }
+  .list { overflow-y: auto; padding: 6px; }
+  .row {
+    display: grid; grid-template-columns: 30px 1fr auto; gap: 9px; align-items: center;
+    padding: 7px 9px; border-radius: 10px; cursor: pointer; border: 1px solid transparent;
+  }
+  .row:hover { background: var(--surface-2); }
+  .row.sel { background: linear-gradient(90deg, rgba(99,102,241,.24), rgba(99,102,241,.06));
+             border-color: rgba(99,102,241,.55); }
+  .row .ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+              background: var(--surface-2); border: 1px solid var(--border); font-size: 14px; overflow: hidden; }
+  .row .ico img { width: 100%; height: 100%; object-fit: cover; }
+  .row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; }
+  .row .s { font-family: var(--mono); font-size: 11px; color: var(--muted);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .r { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+  .tag { font-size: 10px; padding: 1px 6px; border-radius: 20px; border: 1px solid var(--border);
+         color: var(--dim); background: var(--surface-2); white-space: nowrap; }
+  .tag.secret { color: #ffe0a3; border-color: #5a4520; background: rgba(245,158,11,.12); }
+  .tag.site { color: #b6e9f7; border-color: #1d4a55; background: rgba(34,211,238,.1); }
+  .foot { display: flex; align-items: center; gap: 12px; padding: 0 12px; border-top: 1px solid var(--border);
+          font-size: 10.5px; color: var(--muted); }
+  kbd { background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px;
+        border-radius: 4px; padding: 0 5px; font-family: var(--mono); font-size: 10px; }
+  .empty { display: grid; place-content: center; height: 100%; color: var(--muted); text-align: center; gap: 6px; }
+  ::-webkit-scrollbar { width: 9px; }
+  ::-webkit-scrollbar-thumb { background: #2a3245; border-radius: 9px; border: 2px solid transparent; background-clip: content-box; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="bar">
+    <span class="ico">⌘</span>
+    <input id="q" type="text" autocomplete="off" spellcheck="false" placeholder="Tìm trong kho rồi Enter để dán…">
+    <span class="target" id="target">—</span>
+  </div>
+  <div class="list" id="list"></div>
+  <div class="foot">
+    <span><kbd>↵</kbd> dán vào cửa sổ trước</span>
+    <span><kbd>Ctrl</kbd>+<kbd>↵</kbd> chỉ copy</span>
+    <span><kbd>↑</kbd><kbd>↓</kbd> chọn</span>
+    <span><kbd>Esc</kbd> đóng</span>
+    <span style="margin-left:auto" id="hint"></span>
+  </div>
+</div>
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const targetHwnd = parseInt(new URLSearchParams(location.search).get('target') || '0', 10);
+const targetProc = new URLSearchParams(location.search).get('proc') || '';
+const targetTitle = new URLSearchParams(location.search).get('title') || '';
+const scopeParam = new URLSearchParams(location.search).get('scope') || '';
+
+let items = [], sel = 0, query = '';
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function timeAgo(ts) {
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return 'vừa xong';
+  if (m < 60) return m + 'p';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h';
+  return Math.floor(h / 24) + 'd';
+}
+
+function render() {
+  const list = $('#list');
+  if (!items.length) {
+    list.innerHTML = '<div class="empty"><div style="font-size:26px">🔍</div><div>Không tìm thấy mục nào</div></div>';
+    return;
+  }
+  list.innerHTML = items.map((it, i) => {
+    const ico = it.kind === 'image' && it.image ? `<img src="${esc(it.image)}" alt="">`
+      : (it.kind === 'image' ? '🖼' : it.kind === 'files' ? '📎' : '📝');
+    const tags = [];
+    if (it.secrets.length) tags.push(`<span class="tag secret">🔑 ${esc(it.secrets[0].label)}</span>`);
+    if (it.sourceDomain) tags.push(`<span class="tag site">${esc(it.sourceDomain)}</span>`);
+    else if (it.sourceApp) tags.push(`<span class="tag">${esc(it.sourceApp)}</span>`);
+    if (it.pasteApps.length) tags.push(`<span class="tag">➜ ${esc(it.pasteApps[0].app)}</span>`);
+    return `<div class="row ${i === sel ? 'sel' : ''}" data-i="${i}">
+      <div class="ico">${ico}</div>
+      <div>
+        <div class="t">${esc(it.title || '(không tiêu đề)')}</div>
+        <div class="s">${esc((it.preview || '').slice(0, 84))}</div>
+      </div>
+      <div class="r">${tags.slice(0, 2).join('')}<span class="tag">${timeAgo(it.lastCopiedAt || it.createdAt)}</span></div>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('.row').forEach(r => {
+    r.onclick = () => { sel = +r.dataset.i; act(false); };
+  });
+}
+
+async function load() {
+  let url = `/api/items?query=${encodeURIComponent(query)}&limit=12`;
+  if (!query && scopeParam) url += '&scope=' + encodeURIComponent(scopeParam);
+  if (!query && !scopeParam) url += '&scope=all';
+  try {
+    const r = await (await fetch(url)).json();
+    items = r.items || [];
+    sel = Math.min(sel, Math.max(0, items.length - 1));
+    render();
+  } catch (e) {
+    $('#list').innerHTML = '<div class="empty">Không kết nối được máy chủ</div>';
+  }
+}
+
+async function act(copyOnly) {
+  const it = items[sel];
+  if (!it) return;
+  const path = copyOnly ? `/api/items/${it.id}/copy` : `/api/items/${it.id}/paste`;
+  $('#hint').textContent = copyOnly ? 'Đã copy…' : 'Đang dán…';
+  try {
+    const res = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hwnd: targetHwnd }),
+    });
+    const j = await res.json();
+    if (!copyOnly && j.target && !j.target.hwnd && targetHwnd) $('#hint').textContent = 'Không tới được cửa sổ đích';
+  } catch { }
+  hide();
+}
+
+function hide() { window.close(); }
+
+function move(d) {
+  if (!items.length) return;
+  sel = (sel + d + items.length) % items.length;
+  render();
+  const el = document.querySelector('.row.sel');
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+$('#q').addEventListener('input', (e) => {
+  query = e.target.value.trim();
+  sel = 0;
+  clearTimeout(window.__t);
+  window.__t = setTimeout(load, 130);
+});
+$('#q').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+  else if (e.key === 'Enter') { e.preventDefault(); act(e.ctrlKey || e.metaKey); }
+  else if (e.key === 'Escape') { e.preventDefault(); hide(); }
+  e.stopPropagation();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hide();
+  if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+  if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+  if (e.key === 'Enter') { e.preventDefault(); act(e.ctrlKey || e.metaKey); }
+});
+window.addEventListener('blur', () => setTimeout(hide, 130));
+
+$('#target').textContent = targetProc ? '➜ ' + targetProc + (targetTitle ? ' · ' + targetTitle.slice(0, 26) : '') : '➜ cửa sổ đang mở';
+$('#target').title = targetTitle;
+load();
+$('#q').focus();
+</script>
+</body>
+</html>

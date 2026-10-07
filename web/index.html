@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuperClipboard — Trí nhớ clipboard của bạn</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/icon.png">
+</head>
+<body>
+<div id="app">
+
+  <!-- ============================ THANH TRÊN ============================ -->
+  <header class="topbar">
+    <div class="brand" title="SuperClipboard">
+      <img src="/icon.png" alt="" class="brand-logo">
+      <div class="brand-text">
+        <strong>SuperClipboard</strong>
+        <span id="brand-sub">trí nhớ clipboard</span>
+      </div>
+    </div>
+
+    <div class="searchwrap">
+      <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 0 3.5 10.9l4.3 4.3 1.4-1.4-4.3-4.3A6 6 0 0 0 10 4zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8z"/></svg>
+      <input id="q" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Tìm mọi thứ đã copy…  (thử: site:stripe.com is:secret)">
+      <button id="q-clear" class="icon-btn tiny" title="Xoá tìm kiếm">✕</button>
+      <button id="q-help" class="icon-btn tiny" title="Cú pháp tìm kiếm">?</button>
+    </div>
+
+    <div class="topactions">
+      <button id="btn-pause" class="btn ghost" title="Tạm dừng ghi clipboard">
+        <span class="dot" id="pause-dot"></span><span id="pause-label">Đang ghi</span>
+      </button>
+      <button id="btn-targets" class="btn ghost" title="Cửa sổ có thể dán tới">🪟 <span id="target-count">0</span></button>
+      <button id="btn-overview" class="btn ghost">Tổng quan</button>
+      <button id="btn-settings" class="btn ghost icon-btn" title="Cài đặt">⚙</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+
+    <!-- ============================ SIDEBAR ============================ -->
+    <aside class="sidebar">
+      <nav class="nav" id="nav-scopes"></nav>
+
+      <div class="side-section">
+        <div class="side-head">
+          <span>Bộ sưu tập</span>
+          <button class="icon-btn tiny" id="btn-new-collection" title="Tạo bộ sưu tập">＋</button>
+        </div>
+        <div id="collections" class="chips-col"></div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head"><span>Nguồn copy</span></div>
+        <div id="facets-apps" class="facet-list"></div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head"><span>Trang web nguồn</span></div>
+        <div id="facets-sites" class="facet-list"></div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head"><span>Đã dán vào</span></div>
+        <div id="facets-dest" class="facet-list"></div>
+      </div>
+
+      <div class="side-section side-foot">
+        <button class="btn subtle wide" id="btn-export">⇩ Xuất JSON</button>
+        <button class="btn subtle wide" id="btn-report">📄 Báo cáo kho bí mật</button>
+        <button class="btn subtle wide danger" id="btn-clear">🧹 Dọn kho…</button>
+      </div>
+    </aside>
+
+    <!-- ============================ DANH SÁCH ============================ -->
+    <section class="listpane">
+      <div class="listbar">
+        <div class="listbar-left">
+          <h2 id="list-title">Tất cả</h2>
+          <span class="count-pill" id="list-count">0</span>
+          <span class="query-echo" id="query-echo"></span>
+        </div>
+        <div class="listbar-right">
+          <select id="sort" class="select" title="Sắp xếp">
+            <option value="recent">Mới nhất</option>
+            <option value="copies">Copy nhiều nhất</option>
+            <option value="pastes">Dán nhiều nhất</option>
+            <option value="important">Quan trọng</option>
+            <option value="oldest">Cũ nhất</option>
+            <option value="alpha">A → Z</option>
+          </select>
+          <button class="icon-btn" id="btn-refresh" title="Tải lại">⟳</button>
+        </div>
+      </div>
+      <div class="list" id="list"></div>
+      <div class="empty" id="list-empty" hidden>
+        <div class="empty-art">📋</div>
+        <h3>Chưa có gì ở đây</h3>
+        <p>Hãy copy một đoạn văn bản, một API key hay một tấm ảnh — SuperClipboard sẽ tự ghi lại
+           kèm nguồn gốc và nơi bạn dán nó.</p>
+      </div>
+    </section>
+
+    <!-- ============================ CHI TIẾT ============================ -->
+    <aside class="detail" id="detail">
+      <div class="detail-empty">
+        <div class="empty-art">🔎</div>
+        <h3>Chọn một mục</h3>
+        <p>Bên phải sẽ hiện đầy đủ: nội dung, <b>nguồn gốc</b>, <b>đã dán vào đâu</b>,
+           dòng thời gian và cả những API key cùng "dòng họ" với nó.</p>
+        <div class="kbd-legend">
+          <div><kbd>/</kbd> tìm kiếm</div>
+          <div><kbd>↑</kbd><kbd>↓</kbd> di chuyển</div>
+          <div><kbd>Enter</kbd> copy lại</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Enter</kbd> dán tới app trước đó</div>
+          <div><kbd>P</kbd> ghim · <kbd>Del</kbd> xoá</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> bảng lệnh nhanh</div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ============================ THANH TRẠNG THÁI ============================ -->
+  <footer class="statusbar">
+    <div class="status-left">
+      <span class="status-pill" id="st-helper"><span class="dot ok"></span> helper</span>
+      <span class="status-pill" id="st-total">0 mục</span>
+      <span class="status-pill" id="st-secrets">0 bí mật</span>
+      <span class="status-pill" id="st-focus">—</span>
+    </div>
+    <div class="status-right">
+      <span id="st-live" class="status-pill live">● trực tiếp</span>
+      <span id="st-msg" class="status-msg"></span>
+    </div>
+  </footer>
+</div>
+
+<div id="toasts" class="toasts"></div>
+<div id="modal-root"></div>
+<script src="/app.js"></script>
+</body>
+</html>

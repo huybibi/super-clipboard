@@ -1,0 +1,24 @@
+{
+  "name": "superclipboard",
+  "productName": "SuperClipboard",
+  "version": "1.0.0",
+  "description": "Quản lý clipboard thông minh: truy vết nguồn gốc, nơi đã dán, phát hiện API key",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "serve": "node server/server.js",
+    "helper": "node tools/build-helper.js",
+    "icon": "node tools/make-icon.js",
+    "selftest": "electron . --selftest",
+    "test:detect": "node tools/test-detect.js",
+    "test:helper": "node tools/test-helper.js",
+    "test:server": "node tools/test-server.js",
+    "test": "node tools/test-detect.js && node tools/test-helper.js && node tools/test-server.js"
+  },
+  "author": "SuperClipboard",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}
