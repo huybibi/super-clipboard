@@ -139,7 +139,7 @@ function createMain() {
 function createPalette() {
   const disp = screen.getPrimaryDisplay().workAreaSize;
   const w = 680, h = 470;
-  paletteWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: w, height: h,
     x: Math.round((disp.width - w) / 2),
     y: Math.round(disp.height * 0.22),
@@ -148,15 +148,25 @@ function createPalette() {
     backgroundColor: '#00000000',
     webPreferences: { contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
-  paletteWindow.setAlwaysOnTop(true, 'screen-saver');
-  paletteWindow.on('close', (e) => {
-    if (!quitting) { e.preventDefault(); paletteWindow.hide(); }
+  paletteWindow = win;
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.webContents.on('console-message', (...args) => {
+    const d = args[1];
+    const level = (d && typeof d === 'object') ? d.level : args[1];
+    const message = (d && typeof d === 'object') ? d.message : args[2];
+    if (level === 'error' || level === 3) consoleErrors.push('palette: ' + String(message));
   });
-  paletteWindow.on('blur', () => { if (paletteWindow.isVisible()) paletteWindow.hide(); });
+  win.webContents.on('render-process-gone', (_e, d) => consoleErrors.push('palette gone: ' + d.reason));
+  // Trang gọi window.close() sau khi dán. Cửa sổ vẫn bị huỷ thật, nên phải quên
+  // tham chiếu cũ đi — giữ lại xác cửa sổ chính là lỗi "Object has been destroyed".
+  win.on('closed', () => { if (paletteWindow === win) paletteWindow = null; });
+  win.on('close', (e) => { if (!quitting) { e.preventDefault(); win.hide(); } });
+  win.on('blur', () => { if (!win.isDestroyed() && win.isVisible()) win.hide(); });
 }
 
 function openPalette() {
   if (!svc) return;
+  if (!paletteWindow || paletteWindow.isDestroyed()) { paletteWindow = null; createPalette(); }
   const t = pickTarget();
   const q = new URLSearchParams();
   if (t && t.hwnd) {
@@ -164,11 +174,9 @@ function openPalette() {
     q.set('proc', String(t.proc || '').replace(/\.exe$/i, ''));
     q.set('title', t.title || '');
   }
-  if (!paletteWindow) createPalette();
   paletteWindow.loadURL(baseUrl + '/palette?' + q.toString());
   paletteWindow.show();
   paletteWindow.focus();
-  paletteWindow.webContents.once('did-finish-load', () => { });
 }
 
 function showMain() {
@@ -416,7 +424,7 @@ async function runSelftest() {
       shot + ' (' + (fs.existsSync(shot) ? fs.statSync(shot).size : 0) + ' bytes)');
 
     // Chụp thêm ảnh bảng lệnh nhanh
-    if (!paletteWindow) createPalette();
+    if (!paletteWindow || paletteWindow.isDestroyed()) { paletteWindow = null; createPalette(); }
     const pt = pickTarget();
     const qs = new URLSearchParams();
     if (pt && pt.hwnd) { qs.set('target', String(pt.hwnd)); qs.set('proc', String(pt.proc || '')); qs.set('title', pt.title || ''); }
@@ -426,6 +434,40 @@ async function runSelftest() {
     const img2 = await paletteWindow.webContents.capturePage();
     fs.writeFileSync(shot2, img2.toPNG());
     check('Đã chụp ảnh bảng lệnh nhanh', fs.existsSync(shot2) && fs.statSync(shot2).size > 5000, shot2);
+
+    // Bấm Ctrl+Alt+V hai lần liên tiếp — cách người dùng thật sự mở bảng lệnh nhanh.
+    // Lần thứ hai tới khi lần thứ nhất còn đang tải, đây từng gây lỗi JavaScript.
+    const rejErrors = [];
+    const onRejection = (r) => rejErrors.push('unhandled: ' + (r && r.message ? r.message : String(r)));
+    process.on('unhandledRejection', onRejection);
+    const consoleBefore = consoleErrors.length;
+    openPalette();
+    openPalette();
+    await sleep(1600);
+    process.off('unhandledRejection', onRejection);
+    const noise = rejErrors.concat(consoleErrors.slice(consoleBefore));
+    check('Bấm Ctrl+Alt+V hai lần liên tiếp không sinh lỗi JavaScript',
+      noise.length === 0, noise.slice(0, 3).join(' | '));
+
+    // Dán một mục rồi bấm Ctrl+Alt+V lần nữa: trang gọi window.close() sau khi dán,
+    // cửa sổ bị huỷ, lần mở sau đó gọi loadURL trên xác cửa sổ và ném
+    // "TypeError: Object has been destroyed" ở main process.
+    if (!paletteWindow || paletteWindow.isDestroyed()) createPalette();
+    paletteWindow.show();
+    await sleep(400);
+    await paletteWindow.webContents.executeJavaScript('window.close()');
+    await sleep(700);
+    const wasDestroyed = !paletteWindow || paletteWindow.isDestroyed();
+    let reopenErr = null;
+    try {
+      openPalette();
+      await sleep(900);
+      const shown = paletteWindow && !paletteWindow.isDestroyed() &&
+        (await paletteWindow.webContents.executeJavaScript('document.querySelectorAll(".row").length'));
+      if (!shown) reopenErr = new Error('mở lại nhưng bảng lệnh nhanh không có nội dung');
+    } catch (e) { reopenErr = e; }
+    check('Dán xong rồi mở lại bảng lệnh nhanh không lỗi',
+      !reopenErr, (reopenErr ? reopenErr.message : 'ok') + (wasDestroyed ? ' [cửa sổ bị huỷ bởi window.close()]' : ''));
   } catch (e) {
     check('Chạy được toàn bộ kịch bản kiểm thử', false, e.message);
   }
