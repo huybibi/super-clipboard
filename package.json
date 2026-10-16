@@ -10,6 +10,7 @@
     "serve": "node server/server.js",
     "helper": "node tools/build-helper.js",
     "icon": "node tools/make-icon.js",
+    "shortcut": "node tools/make-shortcut.js",
     "selftest": "electron . --selftest",
     "test:detect": "node tools/test-detect.js",
     "test:helper": "node tools/test-helper.js",
