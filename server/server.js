@@ -52,7 +52,13 @@ function createApp(opts = {}) {
   const dataDir = opts.dataDir || process.env.SUPERCLIP_DATA ||
     path.join(process.env.APPDATA || path.join(root, 'data'), 'SuperClipboard');
   const webDir = path.join(root, 'web');
-  const helperExe = opts.helperExe || path.join(root, 'helper', 'SuperClipHelper.exe');
+  // Bản bộ cài: helper nằm ở app.asar.unpacked (xem asarUnpack trong package.json).
+  // Đường dẫn app.asar/... KHÔNG spawn được bằng child_process.
+  let helperExe = opts.helperExe || path.join(root, 'helper', 'SuperClipHelper.exe');
+  if (helperExe.includes('app.asar') && !helperExe.includes('app.asar.unpacked')) {
+    const u = helperExe.replace('app.asar', 'app.asar.unpacked');
+    try { if (fs.existsSync(u)) helperExe = u; } catch { helperExe = u; }
+  }
 
   const store = new Store(dataDir).init();
   const bridge = new HelperBridge({

@@ -1,7 +1,7 @@
 {
   "name": "superclipboard",
   "productName": "SuperClipboard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Quản lý clipboard thông minh: truy vết nguồn gốc, nơi đã dán, phát hiện API key",
   "main": "electron/main.js",
   "private": true,
@@ -15,11 +15,47 @@
     "test:detect": "node tools/test-detect.js",
     "test:helper": "node tools/test-helper.js",
     "test:server": "node tools/test-server.js",
-    "test": "node tools/test-detect.js && node tools/test-helper.js && node tools/test-server.js"
+    "test": "node tools/test-detect.js && node tools/test-helper.js && node tools/test-server.js",
+    "dist": "electron-builder --win --x64 --publish never"
   },
   "author": "SuperClipboard",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^44.5.1"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.local.superclipboard",
+    "productName": "SuperClipboard",
+    "asar": true,
+    "asarUnpack": [
+      "helper/SuperClipHelper.exe",
+      "assets/**/*"
+    ],
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "web/**/*",
+      "helper/SuperClipHelper.exe",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "SuperClipboard"
+    }
   }
 }

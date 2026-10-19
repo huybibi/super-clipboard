@@ -9,7 +9,7 @@
  *  - Chế độ --selftest: tự kiểm tra giao diện rồi chụp ảnh màn hình để nghiệm thu.
  */
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -17,6 +17,28 @@ const ROOT = path.join(__dirname, '..');
 const SELFTEST = process.argv.includes('--selftest');
 /** Được Windows khởi động cùng máy: chạy nền ở khay, không mở cửa sổ. */
 const FROM_STARTUP = process.argv.includes('--from-startup');
+
+/**
+ * Đường dẫn thật trên đĩa khi chạy từ bộ cài (app.asar).
+ * Tệp .exe và ảnh đã khai báo trong `asarUnpack` sẽ nằm ở `app.asar.unpacked`,
+ * còn đường dẫn `app.asar/...` chỉ đọc được bằng fs, KHÔNG spawn/createFromPath được.
+ */
+function unpackedPath(p) {
+  if (!p || !p.includes('app.asar')) return p;
+  const u = p.replace('app.asar', 'app.asar.unpacked');
+  try { if (fs.existsSync(u)) return u; } catch { }
+  // Ưu tiên bản unpacked, kể cả khi chưa kịp kiểm tra (cho child_process).
+  if (/\.exe$/i.test(p) || /assets/i.test(p)) return u;
+  return p;
+}
+
+/** Resolve 1 asset (tray/icon): thử bản unpacked trước, rồi tới bản trong asar. */
+function assetPath(...segs) {
+  const raw = path.join(ROOT, ...segs);
+  const u = unpackedPath(raw);
+  try { if (u !== raw && fs.existsSync(u)) return u; } catch { }
+  return raw;
+}
 
 let mainWindow = null;
 let paletteWindow = null;
@@ -35,13 +57,33 @@ function argValue(name, fallback) {
 // Thư mục dữ liệu người dùng (items.ndjson, blobs/, meta.json).
 // Hồ sơ nội bộ của Chromium được đẩy xuống thư mục con "runtime" để không
 // trộn lẫn với dữ liệu clipboard.
-const DATA_ROOT = argValue('data-dir', path.join(app.getPath('appData'), 'SuperClipboard'));
-fs.mkdirSync(path.join(DATA_ROOT, 'runtime'), { recursive: true });
-app.setPath('userData', path.join(DATA_ROOT, 'runtime'));
+// LƯU Ý BỘ CÀI: không gọi app.getPath() ở top-level — khi chạy từ .exe,
+// Electron chưa ready nên có thể ném lỗi và thoát ngay không hiện gì.
+// DATA_ROOT được tính lười bên trong start() (sau whenReady).
+let DATA_ROOT = null;
+function getDataRoot() {
+  if (DATA_ROOT) return DATA_ROOT;
+  let base = null;
+  try { base = app.getPath('appData'); } catch { base = null; }
+  if (!base) base = process.env.APPDATA || process.env.TEMP || ROOT;
+  const cli = argValue('data-dir', null);
+  DATA_ROOT = cli || path.join(base, 'SuperClipboard');
+  try {
+    fs.mkdirSync(path.join(DATA_ROOT, 'runtime'), { recursive: true });
+    // Phải gọi trước khi tạo BrowserWindow đầu tiên để Chromium dùng đúng hồ sơ.
+    try { app.setPath('userData', path.join(DATA_ROOT, 'runtime')); } catch { }
+  } catch (e) { consoleErrors.push('data-dir: ' + e.message); }
+  return DATA_ROOT;
+}
+
+/** Đường dẫn helper .exe thật trên đĩa (bản unpacked khi chạy từ bộ cài). */
+function helperExePath() {
+  return unpackedPath(path.join(ROOT, 'helper', 'SuperClipHelper.exe'));
+}
 
 // Danh tính ứng dụng với Windows: quyết định tên mục trong registry tự khởi động
 // (mặc định của Electron là "electron.app.Electron"), nhóm trên taskbar và thông báo.
-app.setAppUserModelId('SuperClipboard');
+try { app.setAppUserModelId('SuperClipboard'); } catch { }
 
 /* ------------------------------------------------------------------ tiện ích */
 
@@ -90,9 +132,18 @@ function pickTarget() {
 }
 
 function trayImage() {
-  const p = path.join(ROOT, 'assets', 'tray.png');
-  const img = nativeImage.createFromPath(p);
-  return img.isEmpty() ? nativeImage.createEmpty() : img;
+  // Bản bộ cài: assets nằm ở app.asar.unpacked (asarUnpack) nên createFromPath
+  // mới đọc được. Thử unpacked trước, rồi tới bản trong asar, rồi icon.png.
+  for (const cand of [assetPath('assets', 'tray.png'), assetPath('assets', 'icon.png')]) {
+    try {
+      const img = nativeImage.createFromPath(cand);
+      if (img && !img.isEmpty()) {
+        // Chuẩn hoá 16x16 cho khay Windows, resize mượt.
+        try { return img.resize({ width: 16, height: 16, quality: 'best' }); } catch { return img; }
+      }
+    } catch { }
+  }
+  return nativeImage.createEmpty();
 }
 
 /* ------------------------------------------------------------------ cửa sổ */
@@ -102,7 +153,7 @@ function createMain() {
     width: 1340, height: 860, minWidth: 940, minHeight: 620,
     backgroundColor: '#0a0c13',
     title: 'SuperClipboard',
-    icon: path.join(ROOT, 'assets', 'icon.png'),
+    icon: assetPath('assets', 'icon.png'),
     show: !SELFTEST && !FROM_STARTUP,
     autoHideMenuBar: true,
     webPreferences: {
@@ -130,7 +181,10 @@ function createMain() {
   });
 
   mainWindow.on('close', (e) => {
-    if (!quitting && tray) { e.preventDefault(); mainWindow.hide(); }
+    // Đóng cửa sổ = thu vào khay CHỈ khi khay thật sự tồn tại.
+    // Bản bộ cài: nếu Tray tạo thất bại mà vẫn preventDefault + hide thì
+    // app biến mất hẳn (không cửa sổ, không khay) — tưởng là "không hoạt động".
+    if (!quitting && tray && !tray.isDestroyed()) { e.preventDefault(); mainWindow.hide(); }
   });
 
   mainWindow.loadURL(baseUrl + '/');
@@ -189,7 +243,20 @@ function showMain() {
 /* ------------------------------------------------------------------ khay */
 
 function buildTray() {
-  tray = new Tray(trayImage());
+  let img = null;
+  try { img = trayImage(); } catch (e) { consoleErrors.push('tray image: ' + e.message); }
+  // Bản bộ cài: nếu ảnh khay lỗi mà vẫn `new Tray(empty)` thì app thoát ngay
+  // không báo gì. Có ảnh mới tạo Tray.
+  if (!img || (typeof img.isEmpty === 'function' && img.isEmpty())) {
+    consoleErrors.push('tray: không đọc được ảnh khay, bỏ qua khay');
+    return;
+  }
+  try {
+    tray = new Tray(img);
+  } catch (e) {
+    consoleErrors.push('tray: ' + e.message);
+    return;
+  }
   tray.setToolTip('SuperClipboard — trí nhớ clipboard');
   const rebuild = () => {
     const paused = !!(svc && svc.store.settings.pauseCapture);
@@ -248,7 +315,10 @@ function wireIpc() {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function runSelftest() {
-  const outDir = path.join(ROOT, 'tools');
+  // Bản bộ cài: tools/ nằm trong asar (chỉ đọc) -> đổi thư mục ghi ra DATA_ROOT.
+  let outDir = path.join(ROOT, 'tools');
+  try { fs.mkdirSync(outDir, { recursive: true }); fs.accessSync(outDir, fs.constants.W_OK); }
+  catch { outDir = getDataRoot(); try { fs.mkdirSync(outDir, { recursive: true }); } catch { } }
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail: detail == null ? '' : String(detail) });
 
@@ -477,19 +547,36 @@ async function runSelftest() {
   console.log('\n===== KIỂM THỬ GIAO DIỆN =====');
   for (const r of results) console.log(`${r.ok ? '  OK  ' : '  FAIL'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);
   console.log(`\n===== ${passed}/${results.length} PASS =====`);
-  fs.writeFileSync(path.join(ROOT, 'tools', 'ui-selftest.json'),
-    JSON.stringify({ results, probe: rendererProbe, consoleErrors }, null, 2));
+  // Bản bộ cài: ROOT nằm trong app.asar (chỉ đọc) -> ghi selftest ra thư mục dữ liệu.
+  try {
+    fs.writeFileSync(path.join(ROOT, 'tools', 'ui-selftest.json'),
+      JSON.stringify({ results, probe: rendererProbe, consoleErrors }, null, 2));
+  } catch {
+    try {
+      fs.mkdirSync(getDataRoot(), { recursive: true });
+      fs.writeFileSync(path.join(getDataRoot(), 'ui-selftest.json'),
+        JSON.stringify({ results, probe: rendererProbe, consoleErrors }, null, 2));
+    } catch (e) { consoleErrors.push('selftest write: ' + e.message); }
+  }
   app.exit(failed.length ? 1 : 0);
 }
 
 /* ------------------------------------------------------------------ vòng đời */
 
 async function start() {
-  const dataDir = DATA_ROOT;
-  fs.mkdirSync(dataDir, { recursive: true });
+  const dataDir = getDataRoot();
+  try { fs.mkdirSync(dataDir, { recursive: true }); } catch (e) { consoleErrors.push('data-dir: ' + e.message); }
 
   const { createApp } = require(path.join(ROOT, 'server', 'server.js'));
-  svc = createApp({ dataDir });
+  // Bản bộ cài: helper phải là đường dẫn unpacked thật trên đĩa, nếu không
+  // child_process.spawn sẽ lỗi và clipboard không bao giờ được ghi.
+  const helperExe = helperExePath();
+  if (app.isPackaged && !fs.existsSync(helperExe)) {
+    const msg = 'Không tìm thấy helper: ' + helperExe + '\nCài đặt có thể bị lỗi — hãy cài lại bằng bộ Setup.';
+    consoleErrors.push(msg);
+    try { dialog.showErrorBox('SuperClipboard — thiếu helper', msg); } catch { }
+  }
+  svc = createApp({ dataDir, helperExe });
   const port = await svc.listen(0, '127.0.0.1');
   baseUrl = `http://127.0.0.1:${port}`;
   svc.start();
@@ -506,6 +593,11 @@ async function start() {
       svc.bridge.registerHotkey(1, 0x0002 | 0x0001, 0x56);
     });
     svc.bridge.on('hotkey', (id) => { if (id === 1) openPalette(); });
+    // Bản bộ cài chạy nền ở khay nên lỗi helper rất khó thấy.
+    // Ghi lại để chẩn đoán (mở DevTools / xem log), không thoát app.
+    svc.bridge.on('fatal', (e) => consoleErrors.push('helper fatal: ' + (e && e.message ? e.message : e)));
+    svc.bridge.on('helper-error', (m) => consoleErrors.push('helper: ' + JSON.stringify(m).slice(0, 300)));
+    svc.bridge.on('stderr', (s) => consoleErrors.push('helper stderr: ' + String(s).slice(0, 300)));
   }
 
   wireIpc();

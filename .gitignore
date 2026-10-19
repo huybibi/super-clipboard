@@ -6,6 +6,10 @@ helper/SuperClipHelper.exe
 *.pdb
 *.obj
 
+# Bộ cài / bản đóng gói (build lại bằng `npm run dist`)
+dist/
+electron-build2.log
+
 # Kết quả kiểm thử sinh tự động
 tools/ui-selftest.json
 
